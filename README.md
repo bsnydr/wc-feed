@@ -1,5 +1,7 @@
 # wc-feed
 
+[![tests](https://github.com/bsnydr/wc-feed/actions/workflows/tests.yml/badge.svg)](https://github.com/bsnydr/wc-feed/actions/workflows/tests.yml)
+
 A serverless iCalendar feed for the FIFA World Cup 2026. One Netlify Function generates an `.ics` at `/worldcup.ics`. Subscribe once in Apple Calendar (or any iCal client) and all 104 matches appear with dates, venues, and kickoff times. Knockout-round team names and final scores fill in on their own as the bracket resolves.
 
 The problem: the full 104-match schedule is known well in advance, but the knockout bracket is not. Static calendar exports go stale the moment a group finishes, and a re-downloaded `.ics` doesn't update an existing subscription. This feed is a live URL, so a subscribed calendar re-fetches it on its own refresh interval and the entries update in place. No app, no account, no push infrastructure.
