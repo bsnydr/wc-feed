@@ -1329,15 +1329,29 @@ function normStage(s) {
 
 async function fetchLive() {
   const key = process.env.FOOTBALL_DATA_API_KEY;
-  if (!key) return null;
+  if (!key) {
+    console.warn("[wc-feed] FOOTBALL_DATA_API_KEY not set; serving bracket placeholders.");
+    return null;
+  }
   try {
     const r = await fetch("https://api.football-data.org/v4/competitions/WC/matches", {
       headers: { "X-Auth-Token": key },
     });
-    if (!r.ok) return null;
+    if (!r.ok) {
+      // Surface the reason instead of silently falling back to placeholders.
+      // 403 = key/plan lacks access to this competition, 429 = rate limited, etc.
+      console.warn(`[wc-feed] football-data.org returned ${r.status} ${r.statusText}; serving placeholders.`);
+      return null;
+    }
     const data = await r.json();
-    return Array.isArray(data.matches) ? data.matches : null;
-  } catch (_) {
+    const matches = Array.isArray(data.matches) ? data.matches : null;
+    // Log the distinct stage labels so a mismatch (e.g. the new Round of 32)
+    // is visible in the function logs and can be mapped in normStage().
+    const stages = matches ? [...new Set(matches.map((m) => m.stage))].join(", ") : "(none)";
+    console.log(`[wc-feed] fetched ${matches ? matches.length : 0} matches; stages: ${stages}`);
+    return matches;
+  } catch (e) {
+    console.warn(`[wc-feed] football-data.org fetch failed: ${e && e.message}; serving placeholders.`);
     return null;
   }
 }
@@ -1345,8 +1359,10 @@ async function fetchLive() {
 function overlay(schedule, apiMatches) {
   if (!apiMatches) return;
   const used = new Set();
+  let koTotal = 0, filled = 0;
   for (const e of schedule) {
     if (e.kind !== "ko") continue;
+    koTotal++;
     const target = utcDateOf(e).getTime();
     let best = null, bestDiff = Infinity, bestIdx = -1;
     apiMatches.forEach((m, idx) => {
@@ -1366,8 +1382,12 @@ function overlay(schedule, apiMatches) {
       if (ft && best.score.fullTime.home != null) {
         e.result = `FT ${best.score.fullTime.home}-${best.score.fullTime.away}`;
       }
+      filled++;
     }
   }
+  // filled === 0 while matches were fetched points at a stage-label or
+  // kickoff-time mismatch rather than a connectivity/auth problem.
+  console.log(`[wc-feed] overlay matched ${filled}/${koTotal} knockout fixtures.`);
 }
 
 function buildICS(schedule) {
@@ -1422,7 +1442,9 @@ export default async (req) => {
       "Content-Type": "text/calendar; charset=utf-8",
       "Content-Disposition": 'inline; filename="worldcup.ics"',
       "Cache-Control": "public, max-age=1800",
-      "Netlify-CDN-Cache-Control": "public, max-age=1800, stale-while-revalidate=86400",
+      // Keep the stale window short so resolved team names/scores propagate in
+      // ~1h at worst, not up to a day. The feed's whole value is freshness.
+      "Netlify-CDN-Cache-Control": "public, max-age=1800, stale-while-revalidate=3600",
     },
   });
 };
